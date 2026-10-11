@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>html,body{margin:0}img{max-width:100%}</style>
+</head>
+<body>
+<title>Vessel Walkthrough</title>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: three-pane instrument console. Left = object index + work log, centre = 3D viewport (orbit or walk), right = selected-object card with its details, defects and jobs. Committed dark (bridge at night). */
+:root {
+  --hull: #0d1620;        /* page ground */
+  --deck: #142231;        /* panels */
+  --rail: #22364a;        /* hairlines */
+  --ink: #e4ecf3;         /* primary text */
+  --mist: #8ea3b6;        /* secondary text */
+  --signal: #ff8a3d;      /* international orange: selection + accent */
+  --job: #5cb8e6; --ok: #5cc98a; --warn: #f2c14e; --bad: #ff5d5d;
+  --display: "Barlow Semi Condensed", "Arial Narrow", sans-serif;
+  --body: "Barlow", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body { background: var(--hull); color: var(--ink); font: 15px/1.45 var(--body); }
+* { box-sizing: border-box; }
+button { font: inherit; color: inherit; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+.app { height: 100%; display: grid; grid-template-columns: 300px minmax(0,1fr) 330px; grid-template-rows: auto minmax(0,1fr); }
+header { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 10px 16px; border-bottom: 1px solid var(--rail); background: var(--deck); }
+header h1 { margin: 0; font: 600 18px/1 var(--display); letter-spacing: .06em; text-transform: uppercase; }
+header .file { font: 12px var(--mono); color: var(--mist); min-width: 0; overflow-wrap: anywhere; }
+header .spacer { flex: 1; }
+.btn { background: transparent; border: 1px solid var(--rail); border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+.btn:hover { border-color: var(--signal); color: var(--signal); }
+.btn.on { background: var(--signal); border-color: var(--signal); color: var(--hull); }
+
+aside { background: var(--deck); overflow-y: auto; min-width: 0; }
+#left { border-right: 1px solid var(--rail); }
+#right { border-left: 1px solid var(--rail); }
+section { padding: 14px 16px; border-bottom: 1px solid var(--rail); }
+.label { font: 600 11px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--mist); margin: 0 0 10px; }
+
+.audit { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.audit li { display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: baseline; font-size: 13.5px; }
+.audit .dot { width: 8px; height: 8px; border-radius: 50%; align-self: center; }
+.audit .v { font: 12px var(--mono); color: var(--mist); font-variant-numeric: tabular-nums; }
+.dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+
+#search { width: 100%; background: var(--hull); border: 1px solid var(--rail); border-radius: 4px; color: var(--ink); padding: 7px 10px; font: 16px var(--body); }
+#list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 2px; }
+#list button { width: 100%; text-align: left; background: none; border: 0; border-radius: 4px; padding: 6px 8px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; font-size: 13.5px; }
+#list button:hover { background: var(--rail); }
+#list button.sel { background: var(--signal); color: var(--hull); }
+#list .tag { font: 11px var(--mono); opacity: .7; white-space: nowrap; }
+
+main { position: relative; min-width: 0; min-height: 0; }
+#stage { position: absolute; inset: 0; }
+#stage canvas { display: block; touch-action: none; }
+#tip { position: absolute; pointer-events: none; background: var(--hull); border: 1px solid var(--signal); color: var(--ink); font: 12px var(--mono); padding: 3px 7px; border-radius: 3px; white-space: nowrap; }
+#drop { position: absolute; inset: 12px; border: 2px dashed var(--signal); border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--hull) 80%, transparent); font: 600 20px var(--display); letter-spacing: .06em; text-transform: uppercase; }
+.hint { position: absolute; left: 12px; bottom: 12px; font: 11.5px var(--mono); color: var(--mist); background: color-mix(in srgb, var(--hull) 75%, transparent); padding: 4px 8px; border-radius: 3px; }
+#status { position: absolute; inset: 0; display: grid; place-items: center; color: var(--mist); font: 13px var(--mono); }
+
+.card h2 { margin: 0 0 4px; font: 600 24px/1.1 var(--display); text-wrap: balance; overflow-wrap: anywhere; }
+.card .path { font: 12px var(--mono); color: var(--mist); overflow-wrap: anywhere; }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 13.5px; }
+dt { color: var(--mist); }
+dd { margin: 0; font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.empty { color: var(--mist); font-size: 13.5px; }
+.flag { border-left: 3px solid var(--warn); padding: 8px 10px; background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: 13px; }
+.flag.bad { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); }
+.flag + .flag { margin-top: 8px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; }
+pre.sample { font: 11.5px/1.5 var(--mono); background: var(--hull); border: 1px solid var(--rail); border-radius: 4px; padding: 10px; overflow-x: auto; margin: 8px 0 0; color: var(--mist); }
+
+
+.tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+.tabs .btn { flex: 1; }
+details.auditbox summary { cursor: pointer; }
+details.auditbox summary .label { display: inline; }
+details.auditbox[open] summary { margin-bottom: 10px; }
+#log { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+#log button { width: 100%; text-align: left; background: none; border: 0; border-radius: 4px; padding: 6px 8px; cursor: pointer; display: grid; grid-template-columns: 18px minmax(0,1fr); gap: 8px; font-size: 13.5px; }
+#log button:hover { background: var(--rail); }
+.glyph { width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center; font: 600 11px/1 var(--mono); color: var(--hull); background: var(--bad); flex: none; }
+.glyph.job { background: var(--job); } .glyph.closed { background: var(--mist); }
+.sub { display: block; font: 11.5px var(--mono); color: var(--mist); overflow-wrap: anywhere; }
+.count { font: 11px var(--mono); border-radius: 9px; padding: 1px 6px; background: var(--bad); color: var(--hull); }
+.recs { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.recs li { display: grid; grid-template-columns: 18px minmax(0,1fr); gap: 8px; }
+.recs .t { font-weight: 500; overflow-wrap: anywhere; }
+.recs .closed .t { text-decoration: line-through; color: var(--mist); }
+.recs p { margin: 2px 0 0; font-size: 13px; color: var(--mist); overflow-wrap: anywhere; }
+.link { background: none; border: 0; padding: 0; color: var(--signal); cursor: pointer; font: 12px var(--mono); margin-right: 10px; }
+.link:hover { text-decoration: underline; }
+form.rec, form.field { display: grid; gap: 8px; margin-top: 12px; }
+form.field { grid-template-columns: minmax(0,1fr) minmax(0,1.4fr) auto; }
+form input, form select, form textarea { width: 100%; min-width: 0; background: var(--hull); border: 1px solid var(--rail); border-radius: 4px; color: var(--ink); padding: 7px 10px; font: 16px var(--body); }
+form textarea { min-height: 64px; resize: vertical; }
+form label { display: grid; gap: 4px; font-size: 12.5px; color: var(--mist); }
+form .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+dd .link { margin: 0 0 0 8px; }
+#pad { position: absolute; right: 12px; bottom: 12px; display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(2, 44px); gap: 4px; }
+#pad button { background: color-mix(in srgb, var(--hull) 75%, transparent); border: 1px solid var(--rail); border-radius: 4px; cursor: pointer; font: 16px var(--mono); touch-action: none; user-select: none; }
+#pad button:active { border-color: var(--signal); color: var(--signal); }
+#toast { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); background: var(--hull); border: 1px solid var(--signal); padding: 6px 12px; border-radius: 4px; font-size: 13px; max-width: calc(100% - 32px); }
+.hint { max-width: calc(100% - 180px); }
+.store { font: 11.5px var(--mono); color: var(--mist); }
+.app { grid-template-columns: 300px minmax(0,1fr); }
+/* Selected-object popout: frosted glass over the 3D view. */
+#card { position: absolute; top: 12px; right: 12px; width: min(350px, calc(100% - 24px)); max-height: calc(100% - 24px); overflow-y: auto; padding: 18px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--ink) 16%, transparent), color-mix(in srgb, var(--deck) 46%, transparent) 45%, color-mix(in srgb, var(--hull) 58%, transparent));
+  -webkit-backdrop-filter: blur(26px) saturate(170%); backdrop-filter: blur(26px) saturate(170%);
+  border: 1px solid color-mix(in srgb, var(--ink) 26%, transparent); border-radius: 20px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ink) 38%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--ink) 8%, transparent), 0 18px 48px color-mix(in srgb, var(--hull) 70%, transparent); }
+#card h2 { padding-right: 36px; }
+#card .label, #card dt, #card .path, #card .sub, #card .empty, #card form label { color: color-mix(in srgb, var(--ink) 72%, var(--mist)); }
+#card .btn { border-color: color-mix(in srgb, var(--ink) 30%, transparent); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+#card .btn.on { background: var(--signal); border-color: var(--signal); }
+#card form input, #card form select, #card form textarea { background: color-mix(in srgb, var(--hull) 55%, transparent); border-color: color-mix(in srgb, var(--ink) 24%, transparent); }
+#bClose { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; cursor: pointer; font: 18px/1 var(--body);
+  border: 1px solid color-mix(in srgb, var(--ink) 30%, transparent); background: color-mix(in srgb, var(--ink) 10%, transparent); }
+#bClose:hover { border-color: var(--signal); color: var(--signal); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.chip { font: 12px var(--mono); border: 1px solid var(--signal); color: var(--signal); border-radius: 999px; padding: 3px 9px; background: transparent; cursor: pointer; }
+.chip.off { border-color: var(--rail); color: var(--mist); text-decoration: line-through; }
+.catrow { display: grid; gap: 4px; font-size: 12.5px; margin-top: 14px; }
+#catSel { width: 100%; background: color-mix(in srgb, var(--hull) 55%, transparent); border: 1px solid color-mix(in srgb, var(--ink) 24%, transparent); border-radius: 4px; color: var(--ink); padding: 7px 10px; font: 16px var(--body); }
+#aim { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 2px solid var(--signal); border-radius: 50%; pointer-events: none; }
+
+@media (max-width: 900px) {
+  .app { height: auto; grid-template-columns: minmax(0,1fr); grid-template-rows: auto 60vh auto auto; }
+  main { grid-row: 2; } #right { grid-row: 3; border-left: 0; } #left { grid-row: 4; border-right: 0; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <header>
+    <h1>Vessel Walkthrough</h1>
+    <span class="file" id="fileName">Loading…</span>
+    <span class="store" id="storeState"></span>
+    <span class="spacer"></span>
+    <div class="row">
+      <button class="btn" id="btnWalk" type="button" title="Space">Walk</button>
+      <button class="btn" id="btnXray" type="button">X-ray</button>
+      <button class="btn" id="btnShow" type="button">Show all</button>
+      <button class="btn" id="btnFit" type="button">Fit view</button>
+      <label class="btn" for="filePick">Open .glb</label>
+      <input type="file" id="filePick" accept=".glb,.gltf" hidden>
+    </div>
+  </header>
+
+  <aside id="left">
+    <section>
+      <div class="tabs">
+        <button class="btn on" id="tabObjects" type="button">Objects</button>
+        <button class="btn" id="tabLog" type="button">Work log</button>
+      </div>
+      <div id="paneObjects">
+        <div class="chips" id="chips" aria-label="Category filters"></div>
+        <input id="search" type="search" placeholder="Filter by name" aria-label="Filter objects">
+        <ul id="list"></ul>
+      </div>
+      <div id="paneLog" hidden>
+        <ul id="log"></ul>
+      </div>
+    </section>
+    <section>
+      <details class="auditbox">
+        <summary><span class="label">Model readiness</span></summary>
+        <ul class="audit" id="audit"></ul>
+      </details>
+    </section>
+  </aside>
+
+  <main>
+    <div id="stage"></div>
+    <div id="status">Loading model…</div>
+    <div id="tip" hidden></div>
+    <div id="toast" hidden></div>
+    <div id="aim" hidden></div>
+    <section class="card" id="card" hidden></section>
+    <div id="drop" hidden>Drop .glb to load</div>
+    <div class="hint" id="hint"></div>
+    <div id="pad" hidden>
+      <span></span><button type="button" data-k="w" aria-label="Forward">▲</button><span></span>
+      <button type="button" data-k="arrowleft" aria-label="Turn left">◀</button><button type="button" data-k="s" aria-label="Back">▼</button><button type="button" data-k="arrowright" aria-label="Turn right">▶</button>
+    </div>
+  </main>
+
+</div>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+const $ = id => document.getElementById(id);
+const stage = $('stage');
+const SIGNAL = new THREE.Color('#ff8a3d');
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+stage.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#0d1620');
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+const sun = new THREE.DirectionalLight(0xffffff, 1.2); sun.position.set(5, 10, 7); scene.add(sun);
+
+const camera = new THREE.PerspectiveCamera(45, 1, 0.01, 2000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+let root = null, grid = null, items = [], selected = null, hovered = null, xray = false;
+let bounds = new THREE.Box3(), lastHit = null, formKind = null;
+const pins = new THREE.Group(); scene.add(pins);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// An object's key is the permanent id stamped into the model (scripts/stamp_ids.py). Models without ids fall back to the object name.
+const slug = key => 'o-' + String(key).trim().replace(/[^A-Za-z0-9_~:@+-]+/g, '-');
+const CATS = [['lsa', 'Lifesaving'], ['ffe', 'Fire equipment'], ['firedet', 'Fire detection'], ['emg', 'Emergency and medical'], ['acc', 'Access and openings'],
+  ['mec', 'Propulsion and machinery'], ['ele', 'Electrical'], ['pip', 'Piping, valves and tanks'], ['hvc', 'HVAC and refrigeration'], ['nav', 'Navigation, comms and AV/IT'],
+  ['dek', 'Deck equipment, tenders and toys'], ['int', 'Interior and stowage'], ['gal', 'Galley'], ['str', 'Structure and coatings']];
+const catName = Object.fromEntries(CATS), catOff = new Set();
+// Category comes from the model's "category" property when the designer set one, otherwise from what was chosen in the viewer.
+const catOf = it => catName[it.meta.category] ? it.meta.category : (catName[objs[slug(it.key)]?.category] ? objs[slug(it.key)].category : '');
+function applyVis() { items.forEach(i => i.obj.visible = !i.hidden && !catOff.has(catOf(i))); }
+function renderChips() {
+  const n = {}; items.forEach(i => n[catOf(i)] = (n[catOf(i)] || 0) + 1);
+  const row = [...CATS, ['', 'Uncategorised']].filter(([k]) => n[k]);
+  $('chips').innerHTML = row.length > 1 || (row[0] && row[0][0]) ? row.map(([k, l]) => `<button type="button" class="chip ${catOff.has(k) ? 'off' : ''}" data-cat="${k}" aria-pressed="${!catOff.has(k)}">${l} ${n[k]}</button>`).join('') : '';
+  $('chips').querySelectorAll('.chip').forEach(b => b.onclick = () => { const k = b.dataset.cat; catOff.has(k) ? catOff.delete(k) : catOff.add(k); if (selected && catOff.has(catOf(selected))) select(null); refresh(); });
+}
+let toastTimer; function toast(t) { $('toast').textContent = t; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 4000); }
+
+// ---- Store: defects, jobs and added details. Shared database when published, this browser otherwise.
+let db = null, records = [], objs = {};
+const LS = 'vessel-walkthrough';
+const lsSave = () => { try { localStorage.setItem(LS, JSON.stringify({ records, objs })); } catch {} };
+const fail = e => toast(e?.code === 'invalid_argument' ? 'You have view-only access, so this was not saved.' : 'Could not save. Try again.');
+async function initStore() {
+  try { db = await window.claude?.use?.('db') ?? null; } catch { db = null; }
+  if (db) {
+    $('storeState').textContent = 'Shared log';
+    db.collection('records').onSnapshot(s => { records = s.docs.map(d => ({ id: d.id, ...d.data() })); refresh(); }, () => { $('storeState').textContent = 'Log unavailable'; });
+    db.collection('objects').onSnapshot(s => { objs = {}; s.docs.forEach(d => objs[d.id] = d.data()); refresh(); }, () => {});
+  } else {
+    $('storeState').textContent = 'Log saved in this browser only';
+    try { const d = JSON.parse(localStorage.getItem(LS) || '{}'); records = d.records || []; objs = d.objs || {}; } catch {}
+    refresh();
+  }
+}
+function putRecord(r) {
+  const { id, ...data } = r;
+  if (db) return db.collection('records').doc(id).set(data).catch(fail);
+  records = records.filter(x => x.id !== id).concat(r); lsSave(); refresh();
+}
+function dropRecord(id) {
+  if (db) return db.collection('records').doc(id).delete().catch(fail);
+  records = records.filter(x => x.id !== id); lsSave(); refresh();
+}
+function putObj(it, patch) {
+  const doc = { fields: {}, category: '', ...objs[slug(it.key)], name: it.name.trim(), ...patch };
+  if (db) return db.collection('objects').doc(slug(it.key)).set(doc).catch(fail);
+  objs[slug(it.key)] = doc; lsSave(); refresh();
+}
+const recsOf = it => records.filter(r => r.object === it.key).sort((a, b) => (a.status === 'closed') - (b.status === 'closed') || String(b.created).localeCompare(String(a.created)));
+const itemOf = r => items.find(i => i.key === r.object);
+const glyph = r => `<span class="glyph ${r.kind === 'job' ? 'job' : ''} ${r.status === 'closed' ? 'closed' : ''}">${r.kind === 'job' ? 'J' : '!'}</span>`;
+const day = iso => iso ? new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+const metaLine = r => [r.kind === 'job' ? 'Job' : 'Defect', r.level, r.status === 'closed' ? 'closed' : 'open', r.due ? 'due ' + day(r.due) : '', r.pp ? 'Pinpoint ' + r.pp : '', 'logged ' + day(r.created)].filter(Boolean).join(' · ');
+
+const pinTex = {};
+function pinTexture(kind, closed) {
+  const k = kind + closed; if (pinTex[k]) return pinTex[k];
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  g.fillStyle = closed ? '#8ea3b6' : kind === 'job' ? '#5cb8e6' : '#ff5d5d';
+  g.beginPath(); g.arc(32, 32, 26, 0, 7); g.fill(); g.lineWidth = 5; g.strokeStyle = '#0d1620'; g.stroke();
+  g.fillStyle = '#0d1620'; g.font = '600 36px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(kind === 'job' ? 'J' : '!', 32, 35);
+  return pinTex[k] = new THREE.CanvasTexture(c);
+}
+function pinPoint(r, it) { return r.point ? new THREE.Vector3(...r.point) : new THREE.Box3().setFromObject(it.obj).getCenter(new THREE.Vector3()); }
+function renderPins() {
+  pins.clear();
+  records.forEach(r => {
+    const it = itemOf(r); if (!it || !it.obj.visible) return;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: pinTexture(r.kind, r.status === 'closed'), depthTest: false, sizeAttenuation: false }));
+    s.scale.setScalar(0.045); s.position.copy(pinPoint(r, it)); s.renderOrder = 10; s.userData._item = it; s.userData._rec = r; pins.add(s);
+  });
+}
+function renderLog() {
+  const live = records.filter(itemOf).sort((a, b) => (a.status === 'closed') - (b.status === 'closed') || String(b.created).localeCompare(String(a.created)));
+  const open = live.filter(r => r.status !== 'closed').length;
+  $('tabLog').textContent = `Work log (${open})`;
+  $('log').innerHTML = live.length ? '' : '<li class="empty">Nothing logged yet. Click an object, then Log defect or Pin job.</li>';
+  live.forEach(r => {
+    const li = document.createElement('li'), b = document.createElement('button'); b.type = 'button';
+    b.innerHTML = `${glyph(r)}<span><span>${esc(r.title)}</span><span class="sub">${esc(r.object)} · ${esc(metaLine(r))}</span></span>`;
+    b.onclick = () => { const it = itemOf(r); select(it); focusOn(it.obj); };
+    li.appendChild(b); $('log').appendChild(li);
+  });
+}
+function refresh() { applyVis(); renderChips(); renderPins(); renderLog(); renderList(); renderCard(); }
+const box = new THREE.Box3Helper(new THREE.Box3(), SIGNAL); box.visible = false; scene.add(box);
+
+function resize() {
+  const { clientWidth: w, clientHeight: h } = stage;
+  renderer.setSize(w, h); camera.aspect = w / Math.max(h, 1); camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage);
+
+// Count geometrically disconnected pieces (vertices welded by position).
+function looseParts(meshes) {
+  let total = 0;
+  for (const m of meshes) {
+    const pos = m.geometry.attributes.position, idx = m.geometry.index;
+    const key = new Map(), weld = new Int32Array(pos.count);
+    for (let i = 0; i < pos.count; i++) {
+      const k = `${pos.getX(i).toFixed(4)},${pos.getY(i).toFixed(4)},${pos.getZ(i).toFixed(4)}`;
+      if (!key.has(k)) key.set(k, key.size);
+      weld[i] = key.get(k);
+    }
+    const p = new Int32Array(key.size).map((_, i) => i);
+    const find = a => { while (p[a] !== a) a = p[a] = p[p[a]]; return a; };
+    const tri = idx ? idx.count : pos.count;
+    for (let t = 0; t < tri; t += 3) {
+      const a = weld[idx ? idx.getX(t) : t], b = weld[idx ? idx.getX(t + 1) : t + 1], c = weld[idx ? idx.getX(t + 2) : t + 2];
+      p[find(b)] = find(a); p[find(c)] = find(a);
+    }
+    const roots = new Set(); for (let i = 0; i < p.length; i++) roots.add(find(i));
+    total += roots.size;
+  }
+  return total;
+}
+
+const fmt = n => n.toLocaleString('en-GB');
+const metaOf = o => Object.fromEntries(Object.entries(o.userData).filter(([k]) => k !== 'name' && !k.startsWith('_')));
+const looksMerged = name => /\b\d+\s*x\b|[^s]s\s+\d+\s*$/i.test(name.trim()); // '2x', or a plural followed by a count ('chairs 5'). 'Chair 5' is one item.
+const looksDefault = name => /^(cube|cylinder|sphere|plane|mesh|object|circle|torus)[._\d]*$/i.test(name.trim());
+
+// The page reads the model bytes itself and hands the loader one binary .glb, so nothing is fetched from data: URIs.
+function toGLB(buf) {
+  if (new DataView(buf).getUint32(0, true) === 0x46546C67) return buf;
+  const g = JSON.parse(new TextDecoder().decode(buf)), bufs = g.buffers || [];
+  if (bufs.length !== 1 || !/^data:/.test(bufs[0].uri || '')) throw new Error('this .gltf refers to separate files');
+  const bin = Uint8Array.from(atob(bufs[0].uri.split(',')[1]), c => c.charCodeAt(0)); delete bufs[0].uri;
+  const json = new TextEncoder().encode(JSON.stringify(g)), jl = Math.ceil(json.length / 4) * 4, bl = Math.ceil(bin.length / 4) * 4;
+  const out = new Uint8Array(28 + jl + bl).fill(0x20, 20, 20 + jl), dv = new DataView(out.buffer);
+  dv.setUint32(0, 0x46546C67, true); dv.setUint32(4, 2, true); dv.setUint32(8, out.length, true);
+  dv.setUint32(12, jl, true); dv.setUint32(16, 0x4E4F534A, true); out.set(json, 20);
+  dv.setUint32(20 + jl, bl, true); dv.setUint32(24 + jl, 0x004E4942, true); out.set(bin, 28 + jl);
+  return out.buffer;
+}
+async function load(src, label) {
+  $('status').hidden = false; $('status').textContent = 'Loading model…';
+  const bad = err => { $('status').textContent = `Could not read this file (${String(err.message || err).slice(0, 80)}). Export from Blender as glTF 2.0 (.glb).`; };
+  try {
+    const buf = typeof src === 'string' ? await (await fetch(src)).arrayBuffer() : await src.arrayBuffer();
+    new GLTFLoader().parse(toGLB(buf), '', gltf => build(gltf, label), bad);
+  } catch (e) { bad(e); }
+}
+
+function build(gltf, label) {
+  if (root) scene.remove(root);
+  if (grid) scene.remove(grid);
+  root = gltf.scene; scene.add(root);
+  $('fileName').textContent = label;
+  const assoc = gltf.parser.associations;
+  const isNode = o => assoc.get(o)?.nodes !== undefined;
+
+  // A selectable item = a glTF node that owns geometry (directly, or as multi-material primitives).
+  items = [];
+  const matNames = new Set();
+  root.traverse(o => {
+    if (o.isMesh) {
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { if (m.name) matNames.add(m.name); });
+      o.material = o.material.clone(); o.material.side = THREE.DoubleSide;
+      if (!o.material.name && !o.material.map) o.material.color.set('#aeb9c4'); // glTF default material: tone down to neutral grey
+      o.userData._base = { color: o.material.emissive.clone(), opacity: o.material.opacity, transparent: o.material.transparent };
+    }
+    if (!isNode(o)) return;
+    const meshes = o.isMesh ? [o] : o.children.filter(c => c.isMesh && !isNode(c));
+    if (!meshes.length) return;
+    let tris = 0, verts = 0;
+    meshes.forEach(m => { verts += m.geometry.attributes.position.count; tris += (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3; });
+    const path = []; for (let p = o.parent; p && p !== root; p = p.parent) if (p.name) path.unshift(p.name);
+    const size = new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3());
+    const meta = { ...metaOf(o) }; meshes.forEach(m => Object.assign(meta, metaOf(m)));
+    items.push({ obj: o, meshes, key: String(meta.id || o.name || '(unnamed)').trim(), name: (o.name || '(unnamed)').replace(/_/g, ' '), path, tris, verts, size, meta,
+      parts: looseParts(meshes), materials: [...new Set(meshes.map(m => m.material.name).filter(Boolean))] });
+  });
+  items.sort((a, b) => a.name.localeCompare(b.name));
+  items.forEach(it => it.meshes.forEach(m => m.userData._item = it));
+
+  bounds = new THREE.Box3().setFromObject(root); const dim = bounds.getSize(new THREE.Vector3());
+  if (walking) setWalk(false);
+  grid = new THREE.GridHelper(Math.ceil(Math.max(dim.x, dim.z) * 1.6), Math.ceil(Math.max(dim.x, dim.z) * 1.6), 0x22364a, 0x1a2a3a);
+  grid.position.set(bounds.getCenter(new THREE.Vector3()).x, bounds.min.y - 0.001, bounds.getCenter(new THREE.Vector3()).z);
+  scene.add(grid);
+
+  audit(dim, matNames);
+  select(null);
+  refresh();
+  fit(root);
+  $('status').hidden = true;
+}
+
+function audit(dim, matNames) {
+  const n = items.length;
+  const withMeta = items.filter(i => Object.keys(i.meta).length).length;
+  const merged = items.filter(i => looksMerged(i.name)).length;
+  const unnamed = items.filter(i => looksDefault(i.name) || i.name === '(unnamed)').length;
+  const rows = [
+    [n > 0 ? 'ok' : 'bad', 'Clickable objects', fmt(n)],
+    [unnamed ? 'warn' : 'ok', 'Meaningfully named', `${n - unnamed}/${n}`],
+    [merged ? 'bad' : 'ok', 'Duplicates merged into one object', fmt(merged)],
+    [withMeta === n && n ? 'ok' : withMeta ? 'warn' : 'bad', 'Objects carrying detail data', `${withMeta}/${n}`],
+    [matNames.size ? 'ok' : 'warn', 'Materials', matNames.size ? fmt(matNames.size) : 'none'],
+    ['ok', 'Overall size (m)', `${dim.x.toFixed(1)} × ${dim.z.toFixed(1)} × ${dim.y.toFixed(1)}`],
+  ];
+  $('audit').innerHTML = rows.map(([s, k, v]) => `<li><span class="dot ${s}"></span><span>${k}</span><span class="v">${v}</span></li>`).join('');
+}
+
+function renderList() {
+  const q = $('search').value.trim().toLowerCase();
+  $('list').innerHTML = '';
+  items.filter(i => i.name.toLowerCase().includes(q) && !catOff.has(catOf(i))).forEach(it => {
+    const li = document.createElement('li'), b = document.createElement('button');
+    b.type = 'button';
+    b.className = it === selected ? 'sel' : '';
+    const n = recsOf(it).filter(r => r.status !== 'closed').length;
+    b.innerHTML = `<span></span><span class="tag">${it.hidden ? 'hidden ' : ''}${n ? `<span class="count">${n}</span>` : ''}</span>`;
+    b.firstChild.textContent = it.name;
+    b.onclick = () => { select(it); focusOn(it.obj); };
+    li.appendChild(b); $('list').appendChild(li);
+  });
+}
+
+function paint() {
+  items.forEach(it => it.meshes.forEach(m => {
+    const base = m.userData._base, on = it === selected, hov = it === hovered;
+    m.material.emissive.copy(on ? SIGNAL : hov ? SIGNAL.clone().multiplyScalar(0.35) : base.color);
+    m.material.emissiveIntensity = on ? 0.55 : 1;
+    const ghost = xray && selected && !on;
+    m.material.transparent = ghost || base.transparent;
+    m.material.opacity = ghost ? 0.12 : base.opacity;
+    m.material.depthWrite = !ghost;
+  }));
+}
+
+function select(it) {
+  if (it !== selected) formKind = null;
+  selected = it;
+  box.visible = !!it;
+  if (it) { box.box.setFromObject(it.obj); }
+  paint(); renderList(); renderCard();
+}
+
+function renderCard() {
+  const c = $('card'), it = selected;
+  c.hidden = !it;
+  if (!it) { c.innerHTML = ''; return; }
+  if (locked()) document.exitPointerLock(); // hand the mouse back so the card can be read, used and closed
+  const s = it.size, added = objs[slug(it.key)]?.fields || {}, recs = recsOf(it), cat = catOf(it), fromModel = !!catName[it.meta.category];
+  const flags = [];
+  if (looksMerged(it.name)) flags.push(`The name suggests several items (“${esc(it.name.trim())}”) built as one object. They select together and share one record. Pins still mark the exact spot you clicked.`);
+  const rows = Object.entries(it.meta).filter(([k]) => k !== 'id' && k !== 'category').map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(typeof v === 'object' ? JSON.stringify(v) : v)}</dd>`)
+    .concat(Object.entries(added).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}<button class="link" type="button" data-del="${esc(k)}" aria-label="Remove ${esc(k)}">remove</button></dd>`));
+  c.innerHTML = `
+    <button type="button" id="bClose" aria-label="Close card">×</button>
+    <p class="label">Selected object</p>
+    <h2>${esc(it.name)}</h2>
+    <p class="path">${it.path.length ? esc(it.path.join(' › ')) : 'Top level'}</p>
+    <label class="catrow">Category${fromModel ? ' (set in the model)' : ''}<select id="catSel" ${fromModel ? 'disabled' : ''}><option value="">Uncategorised</option>${CATS.map(([k, l]) => `<option value="${k}" ${k === cat ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+    ${flags.map(t => `<div class="flag bad" style="margin-top:14px">${t}</div>`).join('')}
+
+    <p class="label" style="margin-top:18px">Defects and jobs</p>
+    ${recs.length ? `<ul class="recs">${recs.map(r => `<li class="${r.status === 'closed' ? 'closed' : ''}">${glyph(r)}<div>
+        <div class="t">${esc(r.title)}</div><span class="sub">${esc(metaLine(r))}</span>${r.note ? `<p>${esc(r.note)}</p>` : ''}
+        <div><button class="link" type="button" data-toggle="${esc(r.id)}">${r.status === 'closed' ? 'Reopen' : 'Close'}</button>${r.status === 'closed' ? `<button class="link" type="button" data-drop="${esc(r.id)}">Delete</button>` : ''}</div>
+      </div></li>`).join('')}</ul>` : `<p class="empty" style="margin:0">Nothing logged against this object.</p>`}
+    ${formKind ? `<form class="rec" id="recForm">
+        <label>${formKind === 'job' ? 'Job' : 'Defect'}<input id="recTitle" required maxlength="120" placeholder="${formKind === 'job' ? 'e.g. Re-oil table top' : 'e.g. Hinge loose, door drops'}"></label>
+        <div class="two">
+          <label>${formKind === 'job' ? 'Priority' : 'Severity'}<select id="recLevel">${(formKind === 'job' ? ['Routine', 'Soon', 'Urgent'] : ['Low', 'Medium', 'High', 'Critical']).map(o => `<option>${o}</option>`).join('')}</select></label>
+          ${formKind === 'job' ? `<label>Due<input id="recDue" type="date"></label>` : '<span></span>'}
+        </div>
+        <label>Pinpoint ID, if this is already a Pinpoint point<input id="recPp" inputmode="numeric" maxlength="12" placeholder="Optional"></label>
+        <label>Notes<textarea id="recNote" maxlength="1000"></textarea></label>
+        <div class="row"><button class="btn on" type="submit">Save ${formKind === 'job' ? 'job' : 'defect'}</button><button class="btn" type="button" id="recCancel">Cancel</button></div>
+      </form>` : `<div class="row" style="margin-top:12px">
+        <button class="btn" type="button" id="bDefect">Log defect</button>
+        <button class="btn" type="button" id="bJob">Pin job</button>
+      </div>`}
+
+    <p class="label" style="margin-top:18px">Details</p>
+    ${rows.length ? `<dl>${rows.join('')}</dl>` : `<p class="empty" style="margin:0">The model file carries no data for this object. Add details here, such as type, spec, location or service dates.</p>`}
+    <form class="field" id="fieldForm">
+      <input id="fieldKey" required maxlength="40" placeholder="Label" aria-label="Detail label">
+      <input id="fieldVal" required maxlength="200" placeholder="Value" aria-label="Detail value">
+      <button class="btn" type="submit">Add</button>
+    </form>
+
+    <p class="label" style="margin-top:18px">Geometry</p>
+    <dl>
+      <dt>Size (W×D×H)</dt><dd>${s.x.toFixed(2)} × ${s.z.toFixed(2)} × ${s.y.toFixed(2)} m</dd>
+      <dt>Loose parts</dt><dd>${fmt(it.parts)}</dd>
+      <dt>Triangles</dt><dd>${fmt(it.tris)}</dd>
+      <dt>Material</dt><dd>${esc(it.materials.join(', ') || 'none')}</dd>
+    </dl>
+    <div class="row" style="margin-top:14px">
+      <button class="btn" type="button" id="bFocus">Focus</button>
+      <button class="btn" type="button" id="bHide">Hide</button>
+      <button class="btn" type="button" id="bIso">Show only this</button>
+    </div>
+    ${it.meta.id ? `<p class="sub" style="margin-top:14px">Object ID ${esc(it.key)}</p>` : ''}`;
+  $('catSel').onchange = e => putObj(it, { category: e.target.value });
+  $('bClose').onclick = closeCard;
+  $('bFocus').onclick = () => focusOn(it.obj);
+  $('bHide').onclick = () => { it.hidden = true; select(null); refresh(); };
+  $('bIso').onclick = () => { items.forEach(i => i.hidden = i !== it); refresh(); focusOn(it.obj); };
+  if ($('bDefect')) { $('bDefect').onclick = () => { formKind = 'defect'; renderCard(); $('recTitle').focus(); }; $('bJob').onclick = () => { formKind = 'job'; renderCard(); $('recTitle').focus(); }; }
+  if ($('recForm')) {
+    $('recCancel').onclick = () => { formKind = null; renderCard(); };
+    $('recForm').onsubmit = e => {
+      e.preventDefault();
+      const p = lastHit && lastHit.item === it ? lastHit.point.toArray().map(n => +n.toFixed(3)) : null;
+      const r = { id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), kind: formKind, object: it.key, title: $('recTitle').value.trim(), level: $('recLevel').value,
+        note: $('recNote').value.trim(), status: 'open', created: new Date().toISOString(), point: p };
+      if ($('recDue')?.value) r.due = $('recDue').value;
+      if ($('recPp').value.trim()) r.pp = $('recPp').value.trim();
+      formKind = null; putRecord(r); renderCard();
+    };
+  }
+  $('fieldForm').onsubmit = e => { e.preventDefault(); putObj(it, { fields: { ...added, [$('fieldKey').value.trim()]: $('fieldVal').value.trim() } }); };
+  c.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { const f = { ...added }; delete f[b.dataset.del]; putObj(it, { fields: f }); });
+  c.querySelectorAll('[data-toggle]').forEach(b => b.onclick = () => { const r = records.find(x => x.id === b.dataset.toggle); putRecord({ ...r, status: r.status === 'closed' ? 'open' : 'closed' }); });
+  c.querySelectorAll('[data-drop]').forEach(b => b.onclick = () => dropRecord(b.dataset.drop));
+}
+
+function fit(obj) {
+  const b = new THREE.Box3().setFromObject(obj); if (b.isEmpty()) return;
+  const c = b.getCenter(new THREE.Vector3()), r = b.getBoundingSphere(new THREE.Sphere()).radius || 1;
+  const vHalf = THREE.MathUtils.degToRad(camera.fov / 2), hHalf = Math.atan(Math.tan(vHalf) * camera.aspect);
+  const d = r / Math.sin(Math.min(vHalf, hHalf)) * 1.1;
+  const dir = camera.position.clone().sub(controls.target).normalize();
+  if (dir.lengthSq() < 0.5 || !isFinite(dir.x)) dir.set(1, 0.8, 1.2).normalize();
+  controls.target.copy(c); camera.position.copy(c).addScaledVector(dir, d);
+  camera.near = d / 100; camera.far = d * 100; camera.updateProjectionMatrix();
+}
+
+// Picking
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function pick(e) {
+  const r = renderer.domElement.getBoundingClientRect();
+  if (locked()) ndc.set(0, 0); else ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const pin = ray.intersectObjects(pins.children, false)[0];
+  if (pin) return { item: pin.object.userData._item, point: pin.object.position.clone(), rec: pin.object.userData._rec };
+  const pickable = items.filter(i => i.obj.visible && !(xray && selected && i !== selected)).flatMap(i => i.meshes);
+  const hit = ray.intersectObjects(pickable, false)[0];
+  return hit ? { item: hit.object.userData._item, point: hit.point.clone() } : null;
+}
+let down = null;
+renderer.domElement.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; look = [e.clientX, e.clientY]; });
+renderer.domElement.addEventListener('pointerup', e => {
+  if (down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) < 5 && e.button === 0) { if (walking && !locked() && lockOK && e.pointerType === 'mouse') { select(null); grab(); down = null; return; } const h = pick(e); lastHit = h && !h.rec ? h : null; select(h ? h.item : null); }
+  down = null;
+});
+renderer.domElement.addEventListener('pointermove', e => {
+  if (locked()) { yaw -= e.movementX * 0.0025; pitch = Math.max(-1.3, Math.min(1.3, pitch - e.movementY * 0.0025)); }
+  else if (e.buttons) {
+    if (walking && look) { yaw -= (e.clientX - look[0]) * 0.004; pitch = Math.max(-1.3, Math.min(1.3, pitch - (e.clientY - look[1]) * 0.004)); look = [e.clientX, e.clientY]; }
+    return;
+  }
+  const h = pick(e), it = h ? h.item : null, tip = $('tip');
+  if (it !== hovered) { hovered = it; paint(); }
+  renderer.domElement.style.cursor = it ? 'pointer' : '';
+  tip.hidden = !it;
+  if (it) { const r = stage.getBoundingClientRect(); tip.textContent = h.rec ? `${h.rec.kind === 'job' ? 'Job' : 'Defect'}: ${h.rec.title}` : it.name; tip.style.left = ((locked() ? r.left + r.width / 2 : e.clientX) - r.left + 14) + 'px'; tip.style.top = ((locked() ? r.top + r.height / 2 : e.clientY) - r.top + 14) + 'px'; }
+});
+renderer.domElement.addEventListener('pointerleave', () => { hovered = null; $('tip').hidden = true; paint(); });
+
+// ---- Walk mode: first person at eye height. Space toggles it. The mouse is locked to the look and a click selects whatever is under the centre crosshair.
+let lockOK = true, lockFails = 0, lastFail = 0;
+// A refused lock is retried on the next click (Chrome refuses for a second after Esc). Two refusals in a row fall back to drag-look.
+const lockFail = () => { if (performance.now() - lastFail < 300) return; lastFail = performance.now(); lockOK = ++lockFails < 2; setHint(); };
+const locked = () => document.pointerLockElement === renderer.domElement;
+function grab() { try { renderer.domElement.requestPointerLock()?.catch?.(lockFail); } catch { lockFail(); } }
+function setHint() {
+  $('aim').hidden = !locked();
+  $('hint').textContent = !walking ? 'Space: walk · Drag: orbit · Right-drag: pan · Scroll: zoom · Click: inspect · Esc: clear'
+    : locked() ? 'Mouse: look · W A S D: move · Shift: faster · Click: open the card for what is under the ring · Esc: free the cursor · Space: exit walk'
+    : `W A S D: move · ${lockOK ? 'Click the view: lock the mouse to the look' : 'Drag: look · Click: inspect'} · Space: exit walk`;
+}
+document.addEventListener('pointerlockchange', () => { if (locked()) lockFails = 0; hovered = null; $('tip').hidden = true; paint(); setHint(); });
+document.addEventListener('pointerlockerror', lockFail);
+const EYE = 1.65, keys = new Set(), pos = new THREE.Vector3(), wray = new THREE.Raycaster();
+let walking = false, yaw = 0, pitch = 0, floorY = 0, look = null;
+const passable = it => /door|hatch|gate/i.test(it.name);
+const solids = () => items.filter(i => i.obj.visible && !passable(i)).flatMap(i => i.meshes);
+function groundAt(x, z, fromY) {
+  wray.set(new THREE.Vector3(x, fromY, z), new THREE.Vector3(0, -1, 0)); wray.far = 50;
+  const h = wray.intersectObjects(solids(), false)[0]; return h ? h.point.y : null;
+}
+function blocked(dx, dz) {
+  const len = Math.hypot(dx, dz), dir = new THREE.Vector3(dx / len, 0, dz / len), meshes = solids();
+  return [0.7, 1.3].some(h => { wray.set(new THREE.Vector3(pos.x, floorY + h, pos.z), dir); wray.far = len + 0.3; return wray.intersectObjects(meshes, false).length; });
+}
+function setWalk(on) {
+  walking = on; controls.enabled = !on; keys.clear();
+  $('btnWalk').classList.toggle('on', on); $('btnWalk').textContent = on ? 'Exit walk' : 'Walk'; $('pad').hidden = !on;
+  if (on) grab(); else if (locked()) document.exitPointerLock();
+  setHint();
+  if (on) {
+    const c = bounds.getCenter(new THREE.Vector3()); pos.set(c.x, 0, c.z);
+    floorY = groundAt(c.x, c.z, bounds.min.y + 2) ?? bounds.min.y; yaw = 0; pitch = 0;
+    camera.fov = 70; camera.near = 0.05; camera.far = 500; camera.updateProjectionMatrix();
+  } else { camera.fov = 45; if (root) fit(selected ? selected.obj : root); }
+}
+function lookAtObj(obj) {
+  const c = new THREE.Box3().setFromObject(obj).getCenter(new THREE.Vector3()), dx = c.x - pos.x, dz = c.z - pos.z;
+  if (Math.hypot(dx, dz) < 0.05) return;
+  yaw = Math.atan2(-dx, -dz); pitch = Math.max(-1.3, Math.min(1.3, Math.atan2(c.y - (floorY + EYE), Math.hypot(dx, dz))));
+}
+function closeCard() { select(null); if (walking && lockOK) grab(); }
+function focusOn(obj) { walking ? lookAtObj(obj) : fit(obj); }
+function stepWalk(dt) {
+  const k = n => keys.has(n) ? 1 : 0;
+  const f = Math.sign(k('w') + k('arrowup') - k('s') - k('arrowdown')), s = k('d') - k('a');
+  yaw -= (k('arrowright') - k('arrowleft')) * 1.8 * dt;
+  if (f || s) {
+    const sp = (keys.has('shift') ? 4.4 : 2.2) * dt, sin = Math.sin(yaw), cos = Math.cos(yaw);
+    let dx = -sin * f + cos * s, dz = -cos * f - sin * s; const l = Math.hypot(dx, dz); dx *= sp / l; dz *= sp / l;
+    if (dx && !blocked(dx, 0)) pos.x += dx;
+    if (dz && !blocked(0, dz)) pos.z += dz;
+    const g = groundAt(pos.x, pos.z, floorY + EYE);
+    if (g === null) floorY = bounds.min.y; else if (g - floorY <= 0.6) floorY = g;
+  }
+  camera.position.set(pos.x, floorY + EYE, pos.z); camera.rotation.set(pitch, yaw, 0, 'YXZ');
+}
+const typing = e => /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') { if (formKind) { formKind = null; renderCard(); } else if (walking && !selected) setWalk(false); else select(null); return; }
+  if (typing(e)) return;
+  if (e.key === ' ') { e.preventDefault(); if (!e.repeat && root) { document.activeElement?.blur(); setWalk(!walking); } return; }
+  if (!walking) return;
+  keys.add(e.key.toLowerCase()); if (e.key.startsWith('Arrow')) e.preventDefault();
+});
+addEventListener('keyup', e => { if (e.key === ' ' && !typing(e)) e.preventDefault(); keys.delete(e.key.toLowerCase()); });
+addEventListener('blur', () => keys.clear());
+$('pad').querySelectorAll('button').forEach(b => {
+  b.addEventListener('pointerdown', e => { e.preventDefault(); keys.add(b.dataset.k); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => b.addEventListener(t, () => keys.delete(b.dataset.k)));
+});
+$('btnWalk').onclick = () => root && setWalk(!walking);
+const tab = log => { $('paneLog').hidden = !log; $('paneObjects').hidden = log; $('tabLog').classList.toggle('on', log); $('tabObjects').classList.toggle('on', !log); };
+$('tabObjects').onclick = () => tab(false); $('tabLog').onclick = () => tab(true);
+
+
+$('search').addEventListener('input', renderList);
+$('btnFit').onclick = () => { if (walking) setWalk(false); else if (root) fit(root); };
+$('btnShow').onclick = () => { items.forEach(i => i.hidden = false); catOff.clear(); refresh(); if (root && !walking) fit(root); };
+$('btnXray').onclick = () => { xray = !xray; $('btnXray').classList.toggle('on', xray); paint(); };
+
+// Load another model: file picker or drag-and-drop
+function openFile(f) { if (f) load(f, f.name); }
+$('filePick').addEventListener('change', e => openFile(e.target.files[0]));
+const main = document.querySelector('main');
+main.addEventListener('dragover', e => { e.preventDefault(); $('drop').hidden = false; });
+main.addEventListener('dragleave', e => { if (!main.contains(e.relatedTarget)) $('drop').hidden = true; });
+main.addEventListener('drop', e => { e.preventDefault(); $('drop').hidden = true; openFile(e.dataTransfer.files[0]); });
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => { const dt = Math.min(clock.getDelta(), 0.1); if (walking) stepWalk(dt); else controls.update(); renderer.render(scene, camera); });
+setWalk(false);
+resize();
+load('trial.json', 'House.blend · designer trial, duplicates split');
+initStore();
+</script>
+
+</body>
+</html>
